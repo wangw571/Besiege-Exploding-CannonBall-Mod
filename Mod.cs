@@ -1,5 +1,7 @@
-﻿using spaar.ModLoader;
+using spaar.ModLoader;
 using spaar.ModLoader.UI;
+using System.Collections;
+using System.Collections.Generic;
 using System;
 using UnityEngine;
 
@@ -28,7 +30,7 @@ namespace Exploding_CannonBall_Mod
 
         public override string Name{get{return "BesiegeExplodingCannonballs";}}
         public override Version Version
-        {get{return new Version("0.3");}}
+        {get{return new Version("0.3.1");}}
         public Exploding_CannonBall_Mod()
         {
         }
@@ -50,25 +52,76 @@ namespace Exploding_CannonBall_Mod
     public class ExplodingCannonballScript : MonoBehaviour
     {
         public int TypeOfExplosion = 1;
-
+        public float ExplosionDelay = 0;
+        public float PowerMultiplierOfExplosion = 1;
+        public float RangeMultiplierOfExplosion = 1;
         void Start()
         {
+            
             Commands.RegisterCommand("ChangeExplosionType", (args, notUses) =>
             {
                 try
                 {
                     TypeOfExplosion = int.Parse(args[0]);
+                    Configuration.SetInt("Explosion Type", TypeOfExplosion);
+                    Configuration.Save();
+                    TypeOfExplosion = Mathf.Clamp(TypeOfExplosion, 0, 3);
                 }
                 catch { return "Wrong Option! There are four options: \n 0-No Explosion \n 1-Bomb Explosion \n 2-Grenade \n 3-Rocket \n Example: ChangeExplosionType 2"; }
 
                 return "Complete!";
                  
             }, "Change the explosion type of cannonballs");
+            Commands.RegisterCommand("ChangeExplosionDelay", (args, notUses) =>
+            {
+                try
+                {
+                    ExplosionDelay = int.Parse(args[0]);
+                    Configuration.SetFloat("Explosion Delay", ExplosionDelay);
+                    Configuration.Save();
+                    ExplosionDelay = Mathf.Clamp(ExplosionDelay, 0, Mathf.Infinity);
+                }
+                catch { return "Wrong Input"; }
+
+                return "Complete!";
+
+            }, "Change the explosion delay after cannonballs collide");
+            Commands.RegisterCommand("ChangeExplosionPowerX", (args, notUses) =>
+            {
+                try
+                {
+                    PowerMultiplierOfExplosion = int.Parse(args[0]);
+                    Configuration.SetFloat("Explosion Power", PowerMultiplierOfExplosion);
+                    Configuration.Save();
+                    PowerMultiplierOfExplosion = Mathf.Clamp(PowerMultiplierOfExplosion, 0, Mathf.Infinity);
+                }
+                catch { return "Wrong Input"; }
+
+                return "Complete!";
+
+            }, "Change the explosion power.");
+            Commands.RegisterCommand("ChangeExplosionRangeX", (args, notUses) =>
+            {
+                try
+                {
+                    RangeMultiplierOfExplosion = int.Parse(args[0]);
+                    Configuration.SetFloat("Explosion Range", RangeMultiplierOfExplosion);
+                    Configuration.Save();
+                    RangeMultiplierOfExplosion = Mathf.Clamp(RangeMultiplierOfExplosion, 0, Mathf.Infinity);
+                }
+                catch { return "Wrong Input"; }
+
+                return "Complete!";
+
+            }, "Change the explosion range.");
+            Settings();
         }
 
 
         private void Update()
         {
+            Settings();
+            TypeOfExplosion = Mathf.Clamp(TypeOfExplosion, 0, 3);
             if (TypeOfExplosion != 0)
             {
                 if (GameObject.Find("CanonBallHeavy(Clone)"))
@@ -89,54 +142,118 @@ namespace Exploding_CannonBall_Mod
                 }
             }
         }
+
+        void Settings()
+        {
+            if (Configuration.DoesKeyExist("Explosion Type"))
+            {
+                TypeOfExplosion = Configuration.GetInt("Explosion Type", TypeOfExplosion);
+            }
+                Configuration.SetInt("Explosion Type", TypeOfExplosion);
+            
+
+            if (Configuration.DoesKeyExist("Explosion Delay"))
+            {
+                ExplosionDelay = Configuration.GetFloat("Explosion Delay", ExplosionDelay);
+            }
+                Configuration.SetFloat("Explosion Delay", ExplosionDelay);
+            
+
+            if (Configuration.DoesKeyExist("Explosion Power"))
+            {
+                PowerMultiplierOfExplosion = Configuration.GetFloat("Explosion Power", PowerMultiplierOfExplosion);
+            }
+                Configuration.SetFloat("Explosion Power", PowerMultiplierOfExplosion);
+            
+
+            if (Configuration.DoesKeyExist("Explosion Range"))
+            {
+                RangeMultiplierOfExplosion = Configuration.GetFloat("Explosion Range", RangeMultiplierOfExplosion);
+            }
+                Configuration.SetFloat("Explosion Range", RangeMultiplierOfExplosion);
+            Configuration.Save();
+        }
     }
 
     public class ExplosionForCannonballs:MonoBehaviour
     {
-        public GameObject TheParentOfAll;
+        public ExplodingCannonballScript ECS;
+        private int CountDownExplode;
+        private bool Exploding = false;
+        IEnumerator Explode()
+        {
+            if (Exploding)
+            {
+                while (CountDownExplode >= 0)
+                {
+                    yield return new WaitForFixedUpdate();
+                    --CountDownExplode;
+                    StartCoroutine(Explode());
+                    yield break;
+                }
+                ECS = GameObject.Find("Exploding Cannonball Mod").GetComponent<ExplodingCannonballScript>();
+                if (ECS.TypeOfExplosion == 1)
+                {
+                    GameObject explo = (GameObject)GameObject.Instantiate(PrefabMaster.BlockPrefabs[23].gameObject, this.transform.position, this.transform.rotation);
+                    explo.transform.localScale = Vector3.one * 0.01f;
+                    ExplodeOnCollideBlock ac = explo.GetComponent<ExplodeOnCollideBlock>();
+                    ac.radius = 7 * ECS.RangeMultiplierOfExplosion;
+                    ac.power = 2100f * ECS.PowerMultiplierOfExplosion;
+                    ac.torquePower = 100000 * ECS.PowerMultiplierOfExplosion;
+                    ac.upPower = 0;
+                    ac.Explodey();
+                    Destroy(this.gameObject);
+                }
+                else if (ECS.TypeOfExplosion == 2)
+                {
+                    GameObject explo = (GameObject)GameObject.Instantiate(PrefabMaster.BlockPrefabs[54].gameObject, this.transform.position, this.transform.rotation);
+                    explo.transform.localScale = Vector3.one * 0.01f;
+                    ControllableBomb ac = explo.GetComponent<ControllableBomb>();
+                    ac.radius = 3 * ECS.RangeMultiplierOfExplosion;
+                    ac.power = 1500 * ECS.PowerMultiplierOfExplosion;
+                    ac.randomDelay = 0.00001f;
+                    ac.upPower = 0f;
+                    ac.StartCoroutine_Auto(ac.Explode());
+                    Destroy(this.gameObject);
+                }
+                else if (ECS.TypeOfExplosion == 3)
+                {
+                    GameObject explo = (GameObject)GameObject.Instantiate(PrefabMaster.BlockPrefabs[59].gameObject, this.transform.position, this.transform.rotation);
+                    explo.transform.localScale = Vector3.one * 0.01f;
+                    TimedRocket ac = explo.GetComponent<TimedRocket>();
+                    ac.SetSlip(Color.white);
+                    ac.radius = 3 * ECS.RangeMultiplierOfExplosion;
+                    ac.power = 1500 * ECS.PowerMultiplierOfExplosion;
+                    ac.randomDelay = 0.000001f;
+                    ac.upPower = 0;
+                    ac.StartCoroutine(ac.Explode(0));
+                    Destroy(this.gameObject);
+                }
+            }
+        }
         void Start()
         {
-            TheParentOfAll = GameObject.Find("Exploding Cannonball Mod");
+            ECS = GameObject.Find("Exploding Cannonball Mod").GetComponent<ExplodingCannonballScript>();
+        }
+        void Update()
+        {
+            if (!Exploding)
+            CountDownExplode = (int)  (ECS.ExplosionDelay * 100);
         }
         void OnCollisionEnter(Collision coll)
         {
-            
-            if (TheParentOfAll.GetComponent<ExplodingCannonballScript>().TypeOfExplosion == 1 )
+            if (!Exploding)
             {
-                GameObject explo = (GameObject)GameObject.Instantiate(PrefabMaster.BlockPrefabs[23].gameObject, this.transform.position, this.transform.rotation);
-                explo.transform.localScale = Vector3.one * 0.01f;
-                ExplodeOnCollideBlock ac = explo.GetComponent<ExplodeOnCollideBlock>();
-                ac.radius = 7;
-                ac.power = 2100f;
-                ac.torquePower = 100000;
-                ac.upPower = 0;
-                ac.Explodey();
-                Destroy(this.gameObject);
+                Exploding = true;
+                StartCoroutine(Explode());
             }
-            else if (TheParentOfAll.GetComponent<ExplodingCannonballScript>().TypeOfExplosion == 2)
+        }
+        void OnCollisionStay(Collision coll)
+        {
+            if (!Exploding)
             {
-                GameObject explo = (GameObject)GameObject.Instantiate(PrefabMaster.BlockPrefabs[54].gameObject, this.transform.position, this.transform.rotation);
-                explo.transform.localScale = Vector3.one * 0.01f;
-                ControllableBomb ac = explo.GetComponent<ControllableBomb>();
-                ac.radius = 3;
-                ac.power = 1500;
-                ac.randomDelay = 0.00001f;
-                ac.upPower = 0f;
-                ac.StartCoroutine_Auto(ac.Explode());
-                Destroy(this.gameObject);
-            }
-            else if (TheParentOfAll.GetComponent<ExplodingCannonballScript>().TypeOfExplosion == 3)
-            {
-                GameObject explo = (GameObject)GameObject.Instantiate(PrefabMaster.BlockPrefabs[59].gameObject, this.transform.position, this.transform.rotation);
-                explo.transform.localScale = Vector3.one * 0.01f;
-                TimedRocket ac = explo.GetComponent<TimedRocket>();
-                ac.SetSlip(Color.white);
-                ac.radius = 3;
-                ac.power = 1500;
-                ac.randomDelay = 0.000001f;
-                ac.upPower = 0;
-                ac.StartCoroutine(ac.Explode(0));
-                Destroy(this.gameObject);
+                Exploding = true;
+                StartCoroutine(Explode());
             }
         }
     }
