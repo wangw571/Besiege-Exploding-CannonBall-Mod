@@ -15,7 +15,7 @@ namespace Exploding_CannonBall_Mod
         {get{return "TesseractCat - Maintained By Wang_W571 and MaxTCC";}}
 
         public override string BesiegeVersion
-        {            get            {                return "v0.30";            }        }
+        {            get            {                return "v0.3";            }        }
 
         public override bool CanBeUnloaded
         {
@@ -30,7 +30,7 @@ namespace Exploding_CannonBall_Mod
 
         public override string Name{get{return "BesiegeExplodingCannonballs";}}
         public override Version Version
-        {get{return new Version("0.3.1");}}
+        {get{return new Version("0.3.3");}}
         public Exploding_CannonBall_Mod()
         {
         }
@@ -55,6 +55,7 @@ namespace Exploding_CannonBall_Mod
         public float ExplosionDelay = 0;
         public float PowerMultiplierOfExplosion = 1;
         public float RangeMultiplierOfExplosion = 1;
+        public float ImpactDetector = 0;
         void Start()
         {
             
@@ -72,11 +73,24 @@ namespace Exploding_CannonBall_Mod
                 return "Complete!";
                  
             }, "Change the explosion type of cannonballs");
+            Commands.RegisterCommand("ChangeImpactDetection", (args, notUses) =>
+            {
+                try
+                {
+                    ImpactDetector = float.Parse(args[0]);
+                    Configuration.SetFloat("Impact Detection", ImpactDetector);
+                    Configuration.Save();
+                }
+                catch { return "Wrong Input"; }
+
+                return "Complete!";
+
+            }, "Change detection of impact for cannonballs");
             Commands.RegisterCommand("ChangeExplosionDelay", (args, notUses) =>
             {
                 try
                 {
-                    ExplosionDelay = int.Parse(args[0]);
+                    ExplosionDelay = float.Parse(args[0]);
                     Configuration.SetFloat("Explosion Delay", ExplosionDelay);
                     Configuration.Save();
                     ExplosionDelay = Mathf.Clamp(ExplosionDelay, 0, Mathf.Infinity);
@@ -90,7 +104,7 @@ namespace Exploding_CannonBall_Mod
             {
                 try
                 {
-                    PowerMultiplierOfExplosion = int.Parse(args[0]);
+                    PowerMultiplierOfExplosion = float.Parse(args[0]);
                     Configuration.SetFloat("Explosion Power", PowerMultiplierOfExplosion);
                     Configuration.Save();
                     PowerMultiplierOfExplosion = Mathf.Clamp(PowerMultiplierOfExplosion, 0, Mathf.Infinity);
@@ -104,7 +118,7 @@ namespace Exploding_CannonBall_Mod
             {
                 try
                 {
-                    RangeMultiplierOfExplosion = int.Parse(args[0]);
+                    RangeMultiplierOfExplosion = float.Parse(args[0]);
                     Configuration.SetFloat("Explosion Range", RangeMultiplierOfExplosion);
                     Configuration.Save();
                     RangeMultiplierOfExplosion = Mathf.Clamp(RangeMultiplierOfExplosion, 0, Mathf.Infinity);
@@ -171,6 +185,14 @@ namespace Exploding_CannonBall_Mod
                 RangeMultiplierOfExplosion = Configuration.GetFloat("Explosion Range", RangeMultiplierOfExplosion);
             }
                 Configuration.SetFloat("Explosion Range", RangeMultiplierOfExplosion);
+
+            if (Configuration.DoesKeyExist("Impact Detection"))
+            {
+                ImpactDetector = Configuration.GetFloat("Impact Detection", ImpactDetector);
+            }
+            Configuration.SetFloat("Impact Detection", ImpactDetector);
+            
+
             Configuration.Save();
         }
     }
@@ -180,6 +202,7 @@ namespace Exploding_CannonBall_Mod
         public ExplodingCannonballScript ECS;
         private int CountDownExplode;
         private bool Exploding = false;
+        private int FrameCount = 0;
         IEnumerator Explode()
         {
             if (Exploding)
@@ -202,6 +225,7 @@ namespace Exploding_CannonBall_Mod
                     ac.torquePower = 100000 * ECS.PowerMultiplierOfExplosion;
                     ac.upPower = 0;
                     ac.Explodey();
+                    explo.AddComponent<TimedSelfDestruct>();
                     Destroy(this.gameObject);
                 }
                 else if (ECS.TypeOfExplosion == 2)
@@ -214,6 +238,7 @@ namespace Exploding_CannonBall_Mod
                     ac.randomDelay = 0.00001f;
                     ac.upPower = 0f;
                     ac.StartCoroutine_Auto(ac.Explode());
+                    explo.AddComponent<TimedSelfDestruct>();
                     Destroy(this.gameObject);
                 }
                 else if (ECS.TypeOfExplosion == 3)
@@ -226,7 +251,8 @@ namespace Exploding_CannonBall_Mod
                     ac.power = 1500 * ECS.PowerMultiplierOfExplosion;
                     ac.randomDelay = 0.000001f;
                     ac.upPower = 0;
-                    ac.StartCoroutine(ac.Explode(0));
+                    ac.StartCoroutine(ac.Explode(0.01f));
+                    explo.AddComponent<TimedSelfDestruct>();
                     Destroy(this.gameObject);
                 }
             }
@@ -234,15 +260,20 @@ namespace Exploding_CannonBall_Mod
         void Start()
         {
             ECS = GameObject.Find("Exploding Cannonball Mod").GetComponent<ExplodingCannonballScript>();
+
         }
         void Update()
         {
             if (!Exploding)
             CountDownExplode = (int)  (ECS.ExplosionDelay * 100);
         }
+        void FixedUpdate()
+        {
+            ++FrameCount;
+        }
         void OnCollisionEnter(Collision coll)
         {
-            if (!Exploding)
+            if ((!Exploding || coll.impactForceSum.magnitude > ECS.ImpactDetector) && FrameCount > 2)
             {
                 Exploding = true;
                 StartCoroutine(Explode());
@@ -250,10 +281,26 @@ namespace Exploding_CannonBall_Mod
         }
         void OnCollisionStay(Collision coll)
         {
-            if (!Exploding)
+            if ((!Exploding || coll.relativeVelocity.sqrMagnitude > ECS.ImpactDetector * ECS.ImpactDetector) && FrameCount > 2)
             {
                 Exploding = true;
                 StartCoroutine(Explode());
+            }
+        }
+    }
+    public class TimedSelfDestruct:MonoBehaviour
+    {
+        float timer = 0;
+        void FixedUpdate()
+        {
+            ++timer;
+            if (timer > 260)
+            {
+                Destroy(this.gameObject);
+            }
+            if(this.GetComponent<TimedRocket>())
+            {
+                Destroy(this.GetComponent<TimedRocket>());
             }
         }
     }
