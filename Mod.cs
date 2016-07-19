@@ -85,7 +85,7 @@ namespace Exploding_CannonBall_Mod
                     }, "Explosion type");
             explosionTypeToggle.ValueChanged += (int value) => {
                 ExplodingCannonballScript.Instance.TypeOfExplosion = value;
-                bool display = value == 0;
+                bool display = value != 0;
                 impactDetectionSlider.DisplayInMapper = display;
                 explosionDelaySlider.DisplayInMapper = display;
                 explosionPowerSlider.DisplayInMapper = display;
