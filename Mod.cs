@@ -4,18 +4,17 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 using UnityEngine;
+using System.Reflection;
 
 namespace Exploding_CannonBall_Mod
 {
     public class Exploding_CannonBall_Mod : Mod
     {
-        public GameObject temp;
-
         public override string Author
-        {get{return "TesseractCat - Maintained By Wang_W571 and MaxTCC";}}
+        { get { return "TesseractCat - Maintained By Wang_W571 and MaxTCC Improvement by Lench"; } }
 
         public override string BesiegeVersion
-        {            get            {                return "v0.3";            }        }
+        { get { return "v0.3"; } }
 
         public override bool CanBeUnloaded
         {
@@ -26,60 +25,195 @@ namespace Exploding_CannonBall_Mod
         }
 
         public override string DisplayName
-        {get{return "Exploding Cannonballs Mod";}}
+        { get { return "Exploding Cannonballs Mod"; } }
 
-        public override string Name{get{return "BesiegeExplodingCannonballs";}}
+        public override string Name { get { return "BesiegeExplodingCannonballs"; } }
         public override Version Version
-        {get{return new Version("0.3.3");}}
+        { get { return new Version("0.3.5"); } }
         public Exploding_CannonBall_Mod()
         {
         }
 
         public override void OnLoad()
         {
-            temp = new GameObject();
-            temp.name = "Exploding Cannonball Mod";
-            temp.AddComponent < ExplodingCannonballScript >();
-            GameObject.DontDestroyOnLoad(temp);
+            GameObject.DontDestroyOnLoad(ExplodingCannonballScript.Instance);
+
+            ExplodingCannonballScript.Instance.LoadConfiguration();
+            InitSliders();
+
+            Game.OnBlockPlaced += AddSliders;
+            Game.OnKeymapperOpen += () =>
+            {
+                if (!HasSliders(BlockMapper.CurrentInstance.Block))
+                    AddSliders(BlockMapper.CurrentInstance.Block);
+                AddAllSliders();
+            };
         }
 
         public override void OnUnload()
         {
-            GameObject.Destroy(this.temp);
+            ExplodingCannonballScript.Instance.SaveConfiguration();
+            GameObject.Destroy(ExplodingCannonballScript.Instance);
         }
+
+        #region sliders
+
+        // Static references to sliders;
+        // All blocks share the same slider instance
+        internal static MMenu explosionTypeToggle;
+        internal static MSlider impactDetectionSlider;
+        internal static MSlider explosionDelaySlider;
+        internal static MSlider explosionPowerSlider;
+        internal static MSlider explosionRangeSlider;
+        internal static MToggle cannonBallTrailEnabled;
+        internal static MColourSlider cannonBallTrailColor;
+        internal static MSlider cannonBallTrailLength;
+
+        /// <summary>
+        /// Initializes slider instances.
+        /// Must be called after configuration load and before any slider is initialized.
+        /// </summary>
+        private static void InitSliders()
+        {
+            explosionTypeToggle = new MMenu("explosiontype", ExplodingCannonballScript.Instance.TypeOfExplosion,
+                    new List<string>()
+                    {
+                        "No explosion",
+                        "Bomb", //Changed From Bomb Explosion for Chinese Translation
+                        "Grenade",
+                        "Rocket"
+                    }, "Explosion type");
+            explosionTypeToggle.ValueChanged += (int value) => {
+                ExplodingCannonballScript.Instance.TypeOfExplosion = value;
+                bool display = value == 0;
+                impactDetectionSlider.DisplayInMapper = display;
+                explosionDelaySlider.DisplayInMapper = display;
+                explosionPowerSlider.DisplayInMapper = display;
+                explosionRangeSlider.DisplayInMapper = display;
+                cannonBallTrailEnabled.DisplayInMapper = display;
+                cannonBallTrailColor.DisplayInMapper = display || cannonBallTrailEnabled.IsActive;
+                cannonBallTrailLength.DisplayInMapper = display || cannonBallTrailEnabled.IsActive;
+            };
+
+            impactDetectionSlider = new MSlider("Impact detection", "impactdetection", ExplodingCannonballScript.Instance.ImpactDetector, 0, 5);
+            impactDetectionSlider.ValueChanged += (float value) => { ExplodingCannonballScript.Instance.ImpactDetector = value; };
+
+            explosionDelaySlider = new MSlider("Explosion delay", "explosiondelay", ExplodingCannonballScript.Instance.ExplosionDelay, 0, 10);
+            explosionDelaySlider.ValueChanged += (float value) => { ExplodingCannonballScript.Instance.ExplosionDelay = value; };
+
+            explosionPowerSlider = new MSlider("Explosion power", "explosionpower", ExplodingCannonballScript.Instance.PowerMultiplierOfExplosion, 0, 20);
+            explosionPowerSlider.ValueChanged += (float value) => { ExplodingCannonballScript.Instance.PowerMultiplierOfExplosion = value; };
+
+            explosionRangeSlider = new MSlider("Explosion range", "explosionrange", ExplodingCannonballScript.Instance.RangeMultiplierOfExplosion, 0, 20);
+            explosionRangeSlider.ValueChanged += (float value) => { ExplodingCannonballScript.Instance.RangeMultiplierOfExplosion = value; };
+
+            cannonBallTrailEnabled = new MToggle("Enable Cannon Ball Trail", "TrailEnabled", ExplodingCannonballScript.Instance.IsTrailOn);
+            cannonBallTrailEnabled.Toggled += (bool value) => { ExplodingCannonballScript.Instance.IsTrailOn = value; cannonBallTrailColor.DisplayInMapper = value; cannonBallTrailLength.DisplayInMapper = value; };
+
+            cannonBallTrailColor = new MColourSlider("Trail Color", "TrailColor", ExplodingCannonballScript.Instance.TrailColor);
+            cannonBallTrailColor.ValueChanged += (Color value) => { ExplodingCannonballScript.Instance.TrailColor = value; };
+
+            cannonBallTrailLength = new MSlider("Trail Length", "TrailLength", ExplodingCannonballScript.Instance.TrailLength, 0.01f, 100);
+            cannonBallTrailLength.ValueChanged += (float value) => { ExplodingCannonballScript.Instance.TrailLength = Mathf.Clamp(value,0.001f,Mathf.Infinity); };
+        }
+
+        /// <summary>
+        /// BlockBehaviour private readonly mapperTypes field.
+        /// Of type List<MapperType>.
+        /// </summary>
+        private static FieldInfo mapperTypesField = typeof(BlockBehaviour).GetField("mapperTypes", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        /// <summary>
+        /// Returns true if block already has added sliders.
+        /// Returns true on other blocks than the Cannon.
+        /// </summary>
+        /// <param name="block">BlockBehaviour of the block.</param>
+        public static bool HasSliders(BlockBehaviour block)
+        {
+            return !(block.GetBlockID() == (int)BlockType.Cannon) || block.MapperTypes.Exists(match => match.Key == "explosiontype");
+        }
+
+        /// <summary>
+        /// Adds sliders to all blocks that don't yet have them.
+        /// </summary>
+        public static void AddAllSliders()
+        {
+            foreach (var block in Machine.Active().BuildingBlocks.FindAll(block => !HasSliders(block)))
+                AddSliders(block);
+        }
+
+        /// <summary>
+        /// Wrapper for AddSliders(BlocKBehaviour) with a check and component retrieval.
+        /// </summary>
+        /// <param name="block">block Transform</param>
+        public static void AddSliders(Transform block)
+        {
+            var blockbehaviour = block.GetComponent<BlockBehaviour>();
+            if (!HasSliders(blockbehaviour))
+                AddSliders(blockbehaviour);
+        }
+
+        /// <summary>
+        /// Adds sliders to the block.
+        /// </summary>
+        /// <param name="block">BlockBehaviour script</param>
+        private static void AddSliders(BlockBehaviour block)
+        {
+            if (block.GetBlockID() == (int)BlockType.Cannon)
+            {
+                var currentMapperTypes = block.MapperTypes;
+
+                currentMapperTypes.Add(explosionTypeToggle);
+                currentMapperTypes.Add(impactDetectionSlider);
+                currentMapperTypes.Add(explosionDelaySlider);
+                currentMapperTypes.Add(explosionPowerSlider);
+                currentMapperTypes.Add(explosionRangeSlider);
+                currentMapperTypes.Add(cannonBallTrailEnabled);
+                currentMapperTypes.Add(cannonBallTrailColor);
+                currentMapperTypes.Add(cannonBallTrailLength);
+
+                mapperTypesField.SetValue(block, currentMapperTypes);
+            }
+        }
+
+        #endregion
     }
 
-    public class ExplodingCannonballScript : MonoBehaviour
+    public class ExplodingCannonballScript : SingleInstance<ExplodingCannonballScript>
     {
         public int TypeOfExplosion = 1;
         public float ExplosionDelay = 0;
         public float PowerMultiplierOfExplosion = 1;
         public float RangeMultiplierOfExplosion = 1;
         public float ImpactDetector = 0;
+        public bool IsTrailOn = true;
+        public Color TrailColor = Color.yellow;
+        public float TrailLength = 1;
+
+        public override string Name { get; } = "Exploding Cannonball Mod";
+
         void Start()
         {
-            
+
             Commands.RegisterCommand("ChangeExplosionType", (args, notUses) =>
             {
                 try
                 {
                     TypeOfExplosion = int.Parse(args[0]);
-                    Configuration.SetInt("Explosion Type", TypeOfExplosion);
-                    Configuration.Save();
                     TypeOfExplosion = Mathf.Clamp(TypeOfExplosion, 0, 3);
+                    Exploding_CannonBall_Mod.explosionTypeToggle.Value = TypeOfExplosion;
                 }
                 catch { return "Wrong Option! There are four options: \n 0-No Explosion \n 1-Bomb Explosion \n 2-Grenade \n 3-Rocket \n Example: ChangeExplosionType 2"; }
 
                 return "Complete!";
-                 
+
             }, "Change the explosion type of cannonballs");
             Commands.RegisterCommand("ChangeImpactDetection", (args, notUses) =>
             {
                 try
                 {
                     ImpactDetector = float.Parse(args[0]);
-                    Configuration.SetFloat("Impact Detection", ImpactDetector);
-                    Configuration.Save();
+                    Exploding_CannonBall_Mod.impactDetectionSlider.Value = ImpactDetector;
                 }
                 catch { return "Wrong Input"; }
 
@@ -91,9 +225,8 @@ namespace Exploding_CannonBall_Mod
                 try
                 {
                     ExplosionDelay = float.Parse(args[0]);
-                    Configuration.SetFloat("Explosion Delay", ExplosionDelay);
-                    Configuration.Save();
                     ExplosionDelay = Mathf.Clamp(ExplosionDelay, 0, Mathf.Infinity);
+                    Exploding_CannonBall_Mod.explosionDelaySlider.Value = ExplosionDelay;
                 }
                 catch { return "Wrong Input"; }
 
@@ -105,9 +238,8 @@ namespace Exploding_CannonBall_Mod
                 try
                 {
                     PowerMultiplierOfExplosion = float.Parse(args[0]);
-                    Configuration.SetFloat("Explosion Power", PowerMultiplierOfExplosion);
-                    Configuration.Save();
                     PowerMultiplierOfExplosion = Mathf.Clamp(PowerMultiplierOfExplosion, 0, Mathf.Infinity);
+                    Exploding_CannonBall_Mod.explosionPowerSlider.Value = PowerMultiplierOfExplosion;
                 }
                 catch { return "Wrong Input"; }
 
@@ -119,85 +251,108 @@ namespace Exploding_CannonBall_Mod
                 try
                 {
                     RangeMultiplierOfExplosion = float.Parse(args[0]);
-                    Configuration.SetFloat("Explosion Range", RangeMultiplierOfExplosion);
-                    Configuration.Save();
                     RangeMultiplierOfExplosion = Mathf.Clamp(RangeMultiplierOfExplosion, 0, Mathf.Infinity);
+                    Exploding_CannonBall_Mod.explosionRangeSlider.Value = RangeMultiplierOfExplosion;
                 }
                 catch { return "Wrong Input"; }
 
                 return "Complete!";
 
             }, "Change the explosion range.");
-            Settings();
         }
 
 
         private void Update()
         {
-            Settings();
-            TypeOfExplosion = Mathf.Clamp(TypeOfExplosion, 0, 3);
-            if (TypeOfExplosion != 0)
+            GameObject go = GameObject.Find("CanonBallHeavy(Clone)");
+            if (go != null)
             {
-                if (GameObject.Find("CanonBallHeavy(Clone)"))
+                if (go.GetComponent<Rigidbody>().velocity.sqrMagnitude > 10 || !IsTrailOn)
                 {
-                    GameObject.Find("CanonBallHeavy(Clone)").AddComponent<ExplosionForCannonballs>();
-                    GameObject.Find("CanonBallHeavy(Clone)").name = "CannonBomb(Clone)";
+                    go.name = "CannonBomb(Clone)";
+
+                    if (IsTrailOn)
+                    {
+                        TrailRenderer tr = go.AddComponent<TrailRenderer>();
+                        tr.startWidth = 0.6f;
+                        tr.endWidth = 0.6f;
+                        tr.material = new Material(Shader.Find("Particles/Additive"));
+                        tr.useLightProbes = true;
+                        tr.probeAnchor = go.transform;
+                        tr.material.SetColor("_TintColor", TrailColor);
+                        tr.time = (TrailLength + 0.0001f) / (go.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f);
+                        tr.autodestruct = false;
+                    }
+                    if (TypeOfExplosion != 0)
+                    {
+                        go.AddComponent<ExplosionForCannonballs>();
+                    }
                 }
             }
         }
         private void FixedUpdate()
         {
-            if (TypeOfExplosion != 0)
+            GameObject go = GameObject.Find("CanonBallHeavy(Clone)");
+            if (go != null)
             {
-                if (GameObject.Find("CanonBallHeavy(Clone)"))
+                if (go.GetComponent<Rigidbody>().velocity.sqrMagnitude > 10 || !IsTrailOn)
                 {
-                    GameObject.Find("CanonBallHeavy(Clone)").AddComponent<ExplosionForCannonballs>();
-                    GameObject.Find("CanonBallHeavy(Clone)").name = "CannonBomb(Clone)";
+                    go.name = "CannonBomb(Clone)";
+
+                    if (IsTrailOn)
+                    {
+                        TrailRenderer tr = go.AddComponent<TrailRenderer>();
+                        tr.startWidth = 0.6f;
+                        tr.endWidth = 0.6f;
+                        tr.material = new Material(Shader.Find("Particles/Additive"));
+                        tr.useLightProbes = true;
+                        tr.probeAnchor = go.transform;
+                        tr.material.SetColor("_TintColor", TrailColor);
+                        tr.time = (TrailLength + 0.0001f) / (go.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f);
+                        tr.autodestruct = false;
+                    }
+                    if (TypeOfExplosion != 0)
+                    {
+                        go.AddComponent<ExplosionForCannonballs>();
+                    }
                 }
             }
         }
 
-        void Settings()
+        internal void LoadConfiguration()
         {
-            if (Configuration.DoesKeyExist("Explosion Type"))
-            {
-                TypeOfExplosion = Configuration.GetInt("Explosion Type", TypeOfExplosion);
-            }
-                Configuration.SetInt("Explosion Type", TypeOfExplosion);
-            
+            TypeOfExplosion = Mathf.Clamp(Configuration.GetInt("Explosion Type", TypeOfExplosion), 0, 3);
+            ExplosionDelay = Configuration.GetFloat("Explosion Delay", ExplosionDelay);
+            PowerMultiplierOfExplosion = Configuration.GetFloat("Explosion Power", PowerMultiplierOfExplosion);
+            RangeMultiplierOfExplosion = Configuration.GetFloat("Explosion Range", RangeMultiplierOfExplosion);
+            ImpactDetector = Configuration.GetFloat("Impact Detection", ImpactDetector);
+            IsTrailOn = Configuration.GetBool("Trail Enabled", IsTrailOn);
+            TrailColor = new Color(
+                Configuration.GetFloat("Trail Color R", TrailColor.r),
+                Configuration.GetFloat("Trail Color G", TrailColor.g),
+                Configuration.GetFloat("Trail Color B", TrailColor.b)
+                );
+            TrailLength = Configuration.GetFloat("Trail Length", TrailLength);
+        }
 
-            if (Configuration.DoesKeyExist("Explosion Delay"))
-            {
-                ExplosionDelay = Configuration.GetFloat("Explosion Delay", ExplosionDelay);
-            }
-                Configuration.SetFloat("Explosion Delay", ExplosionDelay);
-            
-
-            if (Configuration.DoesKeyExist("Explosion Power"))
-            {
-                PowerMultiplierOfExplosion = Configuration.GetFloat("Explosion Power", PowerMultiplierOfExplosion);
-            }
-                Configuration.SetFloat("Explosion Power", PowerMultiplierOfExplosion);
-            
-
-            if (Configuration.DoesKeyExist("Explosion Range"))
-            {
-                RangeMultiplierOfExplosion = Configuration.GetFloat("Explosion Range", RangeMultiplierOfExplosion);
-            }
-                Configuration.SetFloat("Explosion Range", RangeMultiplierOfExplosion);
-
-            if (Configuration.DoesKeyExist("Impact Detection"))
-            {
-                ImpactDetector = Configuration.GetFloat("Impact Detection", ImpactDetector);
-            }
+        internal void SaveConfiguration()
+        {
+            Configuration.SetInt("Explosion Type", TypeOfExplosion);
+            Configuration.SetFloat("Explosion Delay", ExplosionDelay);
+            Configuration.SetFloat("Explosion Power", PowerMultiplierOfExplosion);
+            Configuration.SetFloat("Explosion Range", RangeMultiplierOfExplosion);
             Configuration.SetFloat("Impact Detection", ImpactDetector);
-            
+            Configuration.SetBool("Trail Enabled", IsTrailOn);
+            Configuration.SetFloat("Trail Color R", TrailColor.r);
+            Configuration.SetFloat("Trail Color G", TrailColor.g);
+            Configuration.SetFloat("Trail Color B", TrailColor.b);
+            Configuration.SetFloat("Trail Length", TrailLength);
 
             Configuration.Save();
         }
     }
 
-    public class ExplosionForCannonballs:MonoBehaviour
+    public class ExplosionForCannonballs : MonoBehaviour
     {
         public ExplodingCannonballScript ECS;
         private int CountDownExplode;
@@ -259,21 +414,23 @@ namespace Exploding_CannonBall_Mod
         }
         void Start()
         {
-            ECS = GameObject.Find("Exploding Cannonball Mod").GetComponent<ExplodingCannonballScript>();
+            ECS = ExplodingCannonballScript.Instance;
 
         }
         void Update()
         {
             if (!Exploding)
-            CountDownExplode = (int)  (ECS.ExplosionDelay * 100);
+                CountDownExplode = (int)(ECS.ExplosionDelay * 100);
         }
         void FixedUpdate()
         {
             ++FrameCount;
+            TrailRenderer TR = this.GetComponent<TrailRenderer>();
+            if (TR != null) TR.time = (this.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f) / (ECS.TrailLength + 0.0001f);
         }
         void OnCollisionEnter(Collision coll)
         {
-            if ((!Exploding || coll.impactForceSum.magnitude > ECS.ImpactDetector) && FrameCount > 2)
+            if ((!Exploding || coll.relativeVelocity.magnitude > ECS.ImpactDetector) && FrameCount > 2)
             {
                 Exploding = true;
                 StartCoroutine(Explode());
@@ -288,7 +445,7 @@ namespace Exploding_CannonBall_Mod
             }
         }
     }
-    public class TimedSelfDestruct:MonoBehaviour
+    public class TimedSelfDestruct : MonoBehaviour
     {
         float timer = 0;
         void FixedUpdate()
@@ -298,7 +455,7 @@ namespace Exploding_CannonBall_Mod
             {
                 Destroy(this.gameObject);
             }
-            if(this.GetComponent<TimedRocket>())
+            if (this.GetComponent<TimedRocket>())
             {
                 Destroy(this.GetComponent<TimedRocket>());
             }
