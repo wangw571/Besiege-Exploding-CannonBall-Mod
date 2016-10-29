@@ -14,7 +14,7 @@ namespace Exploding_CannonBall_Mod
         { get { return "TesseractCat - Maintained By Wang_W571 and MaxTCC Improvement by Lench"; } }
 
         public override string BesiegeVersion
-        { get { return "v0.3"; } }
+        { get { return "v0.35"; } }
 
         public override bool CanBeUnloaded
         {
@@ -29,7 +29,7 @@ namespace Exploding_CannonBall_Mod
 
         public override string Name { get { return "BesiegeExplodingCannonballs"; } }
         public override Version Version
-        { get { return new Version("0.3.5"); } }
+        { get { return new Version("0.3.7"); } }
         public Exploding_CannonBall_Mod()
         {
         }
@@ -83,16 +83,14 @@ namespace Exploding_CannonBall_Mod
                         "Grenade",
                         "Rocket"
                     }, "Explosion type");
-            explosionTypeToggle.ValueChanged += (int value) => {
+            explosionTypeToggle.ValueChanged += (int value) =>
+            {
                 ExplodingCannonballScript.Instance.TypeOfExplosion = value;
                 bool display = value != 0;
                 impactDetectionSlider.DisplayInMapper = display;
                 explosionDelaySlider.DisplayInMapper = display;
                 explosionPowerSlider.DisplayInMapper = display;
                 explosionRangeSlider.DisplayInMapper = display;
-                cannonBallTrailEnabled.DisplayInMapper = display;
-                cannonBallTrailColor.DisplayInMapper = display || cannonBallTrailEnabled.IsActive;
-                cannonBallTrailLength.DisplayInMapper = display || cannonBallTrailEnabled.IsActive;
             };
 
             impactDetectionSlider = new MSlider("Impact detection", "impactdetection", ExplodingCannonballScript.Instance.ImpactDetector, 0, 5);
@@ -114,7 +112,7 @@ namespace Exploding_CannonBall_Mod
             cannonBallTrailColor.ValueChanged += (Color value) => { ExplodingCannonballScript.Instance.TrailColor = value; };
 
             cannonBallTrailLength = new MSlider("Trail Length", "TrailLength", ExplodingCannonballScript.Instance.TrailLength, 0.01f, 100);
-            cannonBallTrailLength.ValueChanged += (float value) => { ExplodingCannonballScript.Instance.TrailLength = Mathf.Clamp(value,0.001f,Mathf.Infinity); };
+            cannonBallTrailLength.ValueChanged += (float value) => { ExplodingCannonballScript.Instance.TrailLength = Mathf.Clamp(value, 0.001f, Mathf.Infinity); };
         }
 
         /// <summary>
@@ -138,8 +136,10 @@ namespace Exploding_CannonBall_Mod
         /// </summary>
         public static void AddAllSliders()
         {
-            foreach (var block in Machine.Active().BuildingBlocks.FindAll(block => !HasSliders(block)))
+            foreach (BlockBehaviour block in Machine.Active().BuildingBlocks.FindAll(block => !HasSliders(block)))
+            {
                 AddSliders(block);
+            }
         }
 
         /// <summary>
@@ -148,7 +148,7 @@ namespace Exploding_CannonBall_Mod
         /// <param name="block">block Transform</param>
         public static void AddSliders(Transform block)
         {
-            var blockbehaviour = block.GetComponent<BlockBehaviour>();
+            BlockBehaviour blockbehaviour = block.GetComponent<BlockBehaviour>();
             if (!HasSliders(blockbehaviour))
                 AddSliders(blockbehaviour);
         }
@@ -189,6 +189,8 @@ namespace Exploding_CannonBall_Mod
         public bool IsTrailOn = true;
         public Color TrailColor = Color.yellow;
         public float TrailLength = 1;
+        public String UsingShader = "Particles/Additive";
+        public Texture TrailTexture;
 
         public override string Name { get; } = "Exploding Cannonball Mod";
 
@@ -259,6 +261,47 @@ namespace Exploding_CannonBall_Mod
                 return "Complete!";
 
             }, "Change the explosion range.");
+            Commands.RegisterCommand("ChangeCannonballTrailColor", (args, notUses) =>
+            {
+                try
+                {
+                    TrailColor = new Color(float.Parse(args[0]) / 255, float.Parse(args[1]) / 255, float.Parse(args[2]) / 255, float.Parse(args[3]) / 100);
+                }
+                catch { return "Wrong Input"; }
+
+                return "Complete!";
+
+            }, "Change the trail color.");
+
+            Commands.RegisterCommand("ChangeCannonballTrailTexture", (args, notUses) =>
+            {
+                try
+                {
+                    WWW tex = new WWW("File:///" + Application.dataPath + "/Mods/Resources/CannonTrailTexture.png");
+                    TrailTexture = tex.texture;
+                }
+                catch { return "Wrong Input"; }
+
+                return "Complete!";
+
+            }, "Change the texture of the cannon trail.");
+
+            Commands.RegisterCommand("ChangeCannonballTrailShader", (args, notUses) =>
+            {
+                switch (UsingShader)
+                {
+                    case "Particles/Additive":
+                        UsingShader = ("FX/Glass/Stained BumpDistort");
+                        break;
+                    case ("FX/Glass/Stained BumpDistort"):
+                        UsingShader = ("Particles/Additive");
+                        break;
+                }
+
+                return "Complete!";
+
+            }, "Change the trail shader.");
+
         }
 
 
@@ -304,10 +347,18 @@ namespace Exploding_CannonBall_Mod
                         TrailRenderer tr = go.AddComponent<TrailRenderer>();
                         tr.startWidth = 0.6f;
                         tr.endWidth = 0.6f;
-                        tr.material = new Material(Shader.Find("Particles/Additive"));
-                        tr.useLightProbes = true;
+                        tr.material = new Material(Shader.Find(UsingShader));
+                        tr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.UseProxyVolume;
                         tr.probeAnchor = go.transform;
-                        tr.material.SetColor("_TintColor", TrailColor);
+                        if (TrailTexture == null)
+                        {
+                            tr.material.SetColor("_TintColor", TrailColor);
+                        } 
+                        else
+                        {
+                            tr.material.SetTexture("_MainTex", TrailTexture);
+                            tr.material.SetTexture("_BumpMap", TrailTexture);
+                        }
                         tr.time = (TrailLength + 0.0001f) / (go.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f);
                         tr.autodestruct = false;
                     }
@@ -351,6 +402,7 @@ namespace Exploding_CannonBall_Mod
             Configuration.Save();
         }
     }
+
 
     public class ExplosionForCannonballs : MonoBehaviour
     {
