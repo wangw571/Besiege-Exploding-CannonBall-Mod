@@ -632,7 +632,7 @@ namespace Exploding_CannonBall_Mod
                 {
                     go.name = "CrossbowBoltEdited(Clone)";
 
-                    if (IsTrailOn)
+                    if (IsTrailOn && !go.GetComponent<TrailRenderer>())
                     {
                         TrailRenderer tr = go.AddComponent<TrailRenderer>();
                         tr.startWidth = 0.07f;
@@ -821,7 +821,8 @@ namespace Exploding_CannonBall_Mod
                     ac.upPower = 0f;
                     ac.StartCoroutine_Auto(ac.Explode());
                     explo.AddComponent<TimedSelfDestruct>();
-                    Destroy(this.gameObject);
+                    Destroy(this);
+                    this.transform.localScale = Vector3.zero;
                 }
                 else if (EAS.TypeOfAfterEffect == 2)
                 {
@@ -836,7 +837,15 @@ namespace Exploding_CannonBall_Mod
         {
             EAS = ExplodingArrowsScript.Instance;
             FT = GetComponent<FireTag>();
+            this.transform.localScale = Vector3.one;
             CountDownExplode = EAS.AfterEffectDelay * 100;
+            if (EAS.TypeOfAfterEffect == 1)
+            {
+                FT.WaterHit();
+                FT.fireControllerCode.fireProgress = 0;
+                FT.fireControllerCode.onFire = false;
+                FT.burning = false;
+            }
         }
         void Update()
         {
@@ -870,6 +879,12 @@ namespace Exploding_CannonBall_Mod
         }
         void OnTriggerEnter(Collider coll)
         {
+            if (EAS.TypeOfAfterEffect == 1)
+            {
+                Destroy(this);
+                return;
+            }
+
             if (coll.attachedRigidbody)
             {
                 if ((!Exploding || (coll.attachedRigidbody.velocity - this.GetComponent<Rigidbody>().velocity).sqrMagnitude > EAS.ImpactDetector * EAS.ImpactDetector) && FrameCount > 2)
