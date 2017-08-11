@@ -242,7 +242,7 @@ namespace Exploding_CannonBall_Mod
             {
                 var currentMapperTypes = block.MapperTypes;
 
-                currentMapperTypes.Add(ArrowAfterEffectTypeToggle);
+                currentMapperTypes.Add((ArrowAfterEffectTypeToggle));
                 currentMapperTypes.Add(ArrowAfterEffectImpactDetectionSlider);
                 currentMapperTypes.Add(ArrowAfterEffectDelaySlider);
                 currentMapperTypes.Add(ArrowAfterEffectPowerSlider);
@@ -610,7 +610,6 @@ namespace Exploding_CannonBall_Mod
                         tr.startWidth = 0.07f;
                         tr.endWidth = 0.07f;
                         tr.material = new Material(Shader.Find("Particles/Additive"));
-                        tr.useLightProbes = true;
                         tr.probeAnchor = go.transform;
                         tr.material.SetColor("_TintColor", TrailColor);
                         tr.time = (go.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f) / (TrailLength + 0.0001f);
@@ -693,6 +692,92 @@ namespace Exploding_CannonBall_Mod
         }
     }
 
+    public class ExplodingBowScript : BlockScript
+    {
+        public int TypeOfAfterEffect = 1;
+        public float AfterEffectDelay = 0;
+        public float PowerMultiplierOfExplosion = 1;
+        public float RangeMultiplierOfExplosion = 1;
+        public float ImpactDetector = 0;
+        public bool IsTrailOn = true;
+        public Color TrailColor = Color.yellow;
+        public float TrailLength = 1;
+        public String UsingShader = "Particles/Additive";
+        public Texture TrailTexture;
+        public CrossBowBlock CBB;
+        public GameObject Copy;
+
+        private void Start()
+        {
+            CBB = this.GetComponent<CrossBowBlock>();
+            Copy = GameObject.Instantiate(CBB.projectile);
+            Copy.SetActive(false);
+        }
+
+        private void Update()
+        {
+            GameObject go = CBB.projectile;
+            if (go != null)
+            {
+                if (go.GetComponent<Rigidbody>().velocity.sqrMagnitude > 10 || !IsTrailOn)
+                {
+                    go.name = "CrossbowBoltEdited(Clone)";
+
+                    if (IsTrailOn)
+                    {
+                        TrailRenderer tr = go.AddComponent<TrailRenderer>();
+                        tr.startWidth = 0.07f;
+                        tr.endWidth = 0.07f;
+                        tr.material = new Material(Shader.Find("Particles/Additive"));
+                        tr.probeAnchor = go.transform;
+                        tr.material.SetColor("_TintColor", TrailColor);
+                        tr.time = (go.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f) / (TrailLength + 0.0001f);
+                        tr.autodestruct = false;
+                    }
+                    if (TypeOfAfterEffect != 0)
+                    {
+                        go.AddComponent<AfterEffectsForArrows>();
+                    }
+                }
+            }
+        }
+        private void FixedUpdate()
+        {
+            GameObject go = GameObject.Find("PHYSICS GOAL/CrossbowBolt(Clone)");
+            if (go != null)
+            {
+                if (go.GetComponent<Rigidbody>().velocity.sqrMagnitude > 10 || !IsTrailOn)
+                {
+                    go.name = "CrossbowBoltEdited(Clone)";
+
+                    if (IsTrailOn && !go.GetComponent<TrailRenderer>())
+                    {
+                        TrailRenderer tr = go.AddComponent<TrailRenderer>();
+                        tr.startWidth = 0.07f;
+                        tr.endWidth = 0.07f;
+                        tr.material = new Material(Shader.Find(UsingShader));
+                        tr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.UseProxyVolume;
+                        tr.probeAnchor = go.transform;
+                        if (TrailTexture == null)
+                        {
+                            tr.material.SetColor("_TintColor", TrailColor);
+                        }
+                        else
+                        {
+                            tr.material.SetTexture("_MainTex", TrailTexture);
+                            tr.material.SetTexture("_BumpMap", TrailTexture);
+                        }
+                        tr.time = (go.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f) / (TrailLength + 0.0001f);
+                        tr.autodestruct = false;
+                    }
+                    if (TypeOfAfterEffect != 0)
+                    {
+                        go.AddComponent<AfterEffectsForArrows>();
+                    }
+                }
+            }
+        }
+    }
 
     public class ExplosionForCannonballs : MonoBehaviour
     {
@@ -824,13 +909,6 @@ namespace Exploding_CannonBall_Mod
                     Destroy(this);
                     this.transform.localScale = Vector3.zero;
                 }
-                else if (EAS.TypeOfAfterEffect == 2)
-                {
-                    if (coooll.attachedRigidbody)
-                    {
-                        coooll.attachedRigidbody.AddForce((coooll.attachedRigidbody.worldCenterOfMass - this.transform.position).normalized * EAS.PowerMultiplierOfExplosion * 4000);
-                    }
-                }
             }
         }
         void Start()
@@ -846,6 +924,7 @@ namespace Exploding_CannonBall_Mod
                 FT.fireControllerCode.onFire = false;
                 FT.burning = false;
             }
+            TheForce();
         }
         void Update()
         {
@@ -875,6 +954,14 @@ namespace Exploding_CannonBall_Mod
                 {
                     this.FT.Ignite();
                 }
+            }
+        }
+
+        void TheForce()
+        {
+            if (EAS.TypeOfAfterEffect == 2)
+            {
+                this.GetComponent<ProjectileScript>().impactForceMultiplier *= EAS.PowerMultiplierOfExplosion;
             }
         }
         void OnTriggerEnter(Collider coll)
@@ -914,6 +1001,132 @@ namespace Exploding_CannonBall_Mod
         //    }
         //}
     }
+    public class AfterEffectsForArrowsNEW : MonoBehaviour
+    {
+        public ExplodingBowScript EBS;
+        public FireTag FT;
+        private float CountDownExplode;
+        private bool Exploding = false;
+        private int FrameCount = 0;
+        private Collider coooll;
+
+        IEnumerator AE()
+        {
+            if (Exploding)
+            {
+                while (CountDownExplode >= 0 && EBS.TypeOfAfterEffect == 3)
+                {
+                    yield return new WaitForFixedUpdate();
+                    --CountDownExplode;
+                    StartCoroutine(AE());
+                    yield break;
+                }
+
+                if (EBS.TypeOfAfterEffect == 3)
+                {
+                    GameObject explo = (GameObject)GameObject.Instantiate(PrefabMaster.BlockPrefabs[54].gameObject, this.transform.position, this.transform.rotation);
+                    explo.transform.localScale = Vector3.one * 0.01f;
+                    ControllableBomb ac = explo.GetComponent<ControllableBomb>();
+                    ac.radius = 3 * EBS.RangeMultiplierOfExplosion;
+                    ac.power = 1500 * EBS.PowerMultiplierOfExplosion;
+                    ac.randomDelay = 0.00001f;
+                    ac.upPower = 0f;
+                    ac.StartCoroutine_Auto(ac.Explode());
+                    explo.AddComponent<TimedSelfDestruct>();
+                    Destroy(this);
+                    this.transform.localScale = Vector3.zero;
+                }
+                else if (EBS.TypeOfAfterEffect == 2)
+                {
+                    if (coooll.attachedRigidbody)
+                    {
+                        coooll.attachedRigidbody.AddForce((coooll.attachedRigidbody.worldCenterOfMass - this.transform.position).normalized * EBS.PowerMultiplierOfExplosion * 4000);
+                    }
+                }
+            }
+        }
+        void Start()
+        {
+            EBS = this.GetComponent<ExplodingBowScript>();
+            FT = GetComponent<FireTag>();
+            this.transform.localScale = Vector3.one;
+            CountDownExplode = EBS.AfterEffectDelay * 100;
+            if (EBS.TypeOfAfterEffect == 1)
+            {
+                FT.WaterHit();
+                FT.fireControllerCode.fireProgress = 0;
+                FT.fireControllerCode.onFire = false;
+                FT.burning = false;
+            }
+        }
+        void Update()
+        {
+            if (Exploding) { return; }
+
+            if (!Exploding)
+                CountDownExplode = (int)(EBS.AfterEffectDelay * 100);
+
+            if (!FT.burning)
+            {
+                if (EBS.TypeOfAfterEffect == 1)
+                {
+                    this.FT.Ignite();
+                }
+            }
+        }
+        void FixedUpdate()
+        {
+            if (Exploding) { return; }
+            ++FrameCount;
+            TrailRenderer TR = this.GetComponent<TrailRenderer>();
+            if (TR != null) TR.time = (this.GetComponent<Rigidbody>().velocity.magnitude + 0.0001f) / (EBS.TrailLength + 0.0001f);
+
+            if (!FT.burning)
+            {
+                if (EBS.TypeOfAfterEffect == 1)
+                {
+                    this.FT.Ignite();
+                }
+            }
+        }
+        void OnTriggerEnter(Collider coll)
+        {
+            if (EBS.TypeOfAfterEffect == 1)
+            {
+                Destroy(this);
+                return;
+            }
+
+            if (coll.attachedRigidbody)
+            {
+                if ((!Exploding || (coll.attachedRigidbody.velocity - this.GetComponent<Rigidbody>().velocity).sqrMagnitude > EBS.ImpactDetector * EBS.ImpactDetector) && FrameCount > 2)
+                {
+                    Exploding = true;
+                    coooll = coll;
+                    StartCoroutine(AE());
+                }
+            }
+            else
+            {
+                if ((!Exploding || (Vector3.zero - this.GetComponent<Rigidbody>().velocity).sqrMagnitude > EBS.ImpactDetector * EBS.ImpactDetector) && FrameCount > 2)
+                {
+                    Exploding = true;
+                    coooll = coll;
+                    StartCoroutine(AE());
+                }
+            }
+        }
+        //void OnCollisionStay(Collision coll)
+        //{
+        //    if ((!Exploding || coll.relativeVelocity.sqrMagnitude > EAS.ImpactDetector * EAS.ImpactDetector) && FrameCount > 2)
+        //    {
+        //        Exploding = true;
+        //        coooll = coll;
+        //        StartCoroutine(AE());
+        //    }
+        //}
+    }
+
 
     public class TimedSelfDestruct : MonoBehaviour
     {
